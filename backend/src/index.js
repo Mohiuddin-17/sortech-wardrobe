@@ -11,14 +11,16 @@ const shareRoutes = require("./routes/shareRoutes");
 
 const app = express();
 
+// Render (and most cloud hosts) sit behind a proxy. Without this, express-rate-limit
+// sees the proxy's IP instead of the user's, and throws a validation error.
+app.set("trust proxy", 1);
+
 const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim());
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-// Add this line right after app.use(cors(...)):
-app.options("*", cors());
 app.use(express.json({ limit: "2mb" }));
 
 // Basic protection against brute-force login attempts — cheap insurance on a free tier
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, validate: { xForwardedForHeader: false } });
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
 
