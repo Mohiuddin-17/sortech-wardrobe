@@ -1,0 +1,92 @@
+// Sortech Wardrobe — database schema
+// Free-tier friendly: works on Render's free PostgreSQL (1GB) or Supabase free tier.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Style {
+  FORMAL
+  INFORMAL
+}
+
+enum Category {
+  TSHIRT
+  SHIRT
+  JEANS
+  TROUSER
+  PANTS
+  SHOES
+  SANDALS
+  JACKET
+  KURTA
+  SHALWAR_KAMEEZ
+  ACCESSORY
+  OTHER
+}
+
+model User {
+  id           String         @id @default(cuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  role         Role           @default(USER)
+  createdAt    DateTime       @default(now())
+  clothingItems ClothingItem[]
+  outfits      Outfit[]
+
+  @@map("users")
+}
+
+model ClothingItem {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  category   Category
+  style      Style
+  imageUrl   String
+  imageId    String?  // cloudinary public_id, for deletion
+  costCents  Int?     // optional, stored in cents to avoid float issues
+  currency   String   @default("PKR")
+  createdAt  DateTime @default(now())
+
+  outfitItems OutfitItem[]
+
+  @@index([userId])
+  @@map("clothing_items")
+}
+
+model Outfit {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  createdAt  DateTime     @default(now())
+  items      OutfitItem[]
+  shareToken String?      @unique
+
+  @@index([userId])
+  @@map("outfits")
+}
+
+model OutfitItem {
+  id             String       @id @default(cuid())
+  outfitId       String
+  outfit         Outfit       @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  clothingItemId String
+  clothingItem   ClothingItem @relation(fields: [clothingItemId], references: [id], onDelete: Cascade)
+
+  @@unique([outfitId, clothingItemId])
+  @@map("outfit_items")
+}
