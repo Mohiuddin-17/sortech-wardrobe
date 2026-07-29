@@ -13,6 +13,8 @@ const app = express();
 
 const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim());
 app.use(cors({ origin: allowedOrigins, credentials: true }));
+// Add this line right after app.use(cors(...)):
+app.options("*", cors());
 app.use(express.json({ limit: "2mb" }));
 
 // Basic protection against brute-force login attempts — cheap insurance on a free tier
