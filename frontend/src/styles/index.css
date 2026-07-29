@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-sortech-50 text-slate-800;
+}
+
+.btn-primary {
+  @apply bg-sortech-500 text-white font-medium px-4 py-2 rounded-lg hover:bg-sortech-600 transition disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-secondary {
+  @apply bg-white text-sortech-600 border border-sortech-200 font-medium px-4 py-2 rounded-lg hover:bg-sortech-50 transition;
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-sortech-100 p-4;
+}
+
+.input {
+  @apply w-full border border-sortech-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sortech-400;
+}
