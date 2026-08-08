@@ -1,5 +1,4 @@
-// Sortech Wardrobe — database schema
-// Free-tier friendly: works on Render's free PostgreSQL (1GB) or Supabase free tier.
+// Sortech Wardrobe v2 — database schema
 
 generator client {
   provider = "prisma-client-js"
@@ -31,36 +30,42 @@ enum Category {
   JACKET
   KURTA
   SHALWAR_KAMEEZ
+  WATCH
+  CAP
   ACCESSORY
   OTHER
 }
 
 model User {
-  id           String         @id @default(cuid())
-  name         String
-  email        String         @unique
-  passwordHash String
-  role         Role           @default(USER)
-  createdAt    DateTime       @default(now())
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
   clothingItems ClothingItem[]
-  outfits      Outfit[]
+  outfits       Outfit[]
+  wearLogs      WearLog[]
+  // outfits shared TO this user
+  sharedWithMe  OutfitShare[]  @relation("SharedWithUser")
+  // outfits this user shared
+  sharedByMe    OutfitShare[]  @relation("SharedByUser")
 
   @@map("users")
 }
 
 model ClothingItem {
-  id         String   @id @default(cuid())
+  id         String      @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   name       String
   category   Category
   style      Style
   imageUrl   String
-  imageId    String?  // cloudinary public_id, for deletion
-  costCents  Int?     // optional, stored in cents to avoid float issues
-  currency   String   @default("PKR")
-  createdAt  DateTime @default(now())
-
+  imageId    String?
+  costCents  Int?
+  currency   String      @default("PKR")
+  createdAt  DateTime    @default(now())
   outfitItems OutfitItem[]
 
   @@index([userId])
@@ -68,13 +73,14 @@ model ClothingItem {
 }
 
 model Outfit {
-  id         String       @id @default(cuid())
-  userId     String
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  createdAt  DateTime     @default(now())
-  items      OutfitItem[]
-  shareToken String?      @unique
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  createdAt   DateTime      @default(now())
+  items       OutfitItem[]
+  wearLogs    WearLog[]
+  shares      OutfitShare[]
 
   @@index([userId])
   @@map("outfits")
@@ -89,4 +95,38 @@ model OutfitItem {
 
   @@unique([outfitId, clothingItemId])
   @@map("outfit_items")
+}
+
+// Tracks every time a user confirms wearing an outfit
+model WearLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outfitId  String
+  outfit    Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  wornAt    DateTime @default(now())
+  occasion  String?  // e.g. "Wedding", "Office", "Casual outing"
+  notes     String?
+
+  @@index([userId])
+  @@index([outfitId])
+  @@map("wear_logs")
+}
+
+// In-app outfit sharing between registered users (with email notification)
+model OutfitShare {
+  id          String   @id @default(cuid())
+  outfitId    String
+  outfit      Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  fromUserId  String
+  fromUser    User     @relation("SharedByUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId    String
+  toUser      User     @relation("SharedWithUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  message     String?
+  seenAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([outfitId, toUserId])
+  @@index([toUserId])
+  @@map("outfit_shares")
 }

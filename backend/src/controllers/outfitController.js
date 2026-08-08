@@ -1,5 +1,9 @@
-const { nanoid } = require("nanoid");
 const prisma = require("../config/db");
+const { sendOutfitSharedEmail } = require("../utils/email");
+
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://sortech-wardrobe-1.onrender.com";
+
+// ── Outfit CRUD ──────────────────────────────────────────────────────────────
 
 async function createOutfit(req, res) {
   try {
@@ -8,7 +12,6 @@ async function createOutfit(req, res) {
       return res.status(400).json({ error: "An outfit needs a name and at least one item." });
     }
 
-    // Verify every item actually belongs to this user before linking it in.
     const owned = await prisma.clothingItem.findMany({
       where: { id: { in: itemIds }, userId: req.user.id },
       select: { id: true },
@@ -36,7 +39,10 @@ async function createOutfit(req, res) {
 async function listOutfits(req, res) {
   const outfits = await prisma.outfit.findMany({
     where: { userId: req.user.id },
-    include: { items: { include: { clothingItem: true } } },
+    include: {
+      items: { include: { clothingItem: true } },
+      wearLogs: { orderBy: { wornAt: "desc" }, take: 1 },
+    },
     orderBy: { createdAt: "desc" },
   });
   res.json({ outfits });
@@ -51,42 +57,132 @@ async function deleteOutfit(req, res) {
   res.json({ success: true });
 }
 
-// Generates (or returns the existing) public share link for an outfit.
-async function shareOutfit(req, res) {
-  const outfit = await prisma.outfit.findUnique({ where: { id: req.params.id } });
-  if (!outfit || outfit.userId !== req.user.id) {
-    return res.status(404).json({ error: "Outfit not found." });
-  }
+// ── Wear log ─────────────────────────────────────────────────────────────────
 
-  const shareToken = outfit.shareToken || nanoid(12);
-  if (!outfit.shareToken) {
-    await prisma.outfit.update({ where: { id: outfit.id }, data: { shareToken } });
-  }
+async function confirmWearing(req, res) {
+  try {
+    const { occasion, notes } = req.body;
+    const outfit = await prisma.outfit.findUnique({ where: { id: req.params.id } });
+    if (!outfit || outfit.userId !== req.user.id) {
+      return res.status(404).json({ error: "Outfit not found." });
+    }
 
-  res.json({ shareToken, shareUrl: `${process.env.FRONTEND_URL || ""}/shared/${shareToken}` });
+    const log = await prisma.wearLog.create({
+      data: {
+        userId: req.user.id,
+        outfitId: outfit.id,
+        occasion: occasion || null,
+        notes: notes || null,
+      },
+    });
+
+    res.status(201).json({ log });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not save wear log." });
+  }
 }
 
-// Public endpoint — no auth. Only returns the outfit's own items, never
-// anything else about the owning user (their wardrobe stays private).
-async function getSharedOutfit(req, res) {
-  const outfit = await prisma.outfit.findUnique({
-    where: { shareToken: req.params.token },
+async function getWearHistory(req, res) {
+  const logs = await prisma.wearLog.findMany({
+    where: { userId: req.user.id },
     include: {
-      items: { include: { clothingItem: true } },
-      user: { select: { name: true } },
+      outfit: {
+        include: { items: { include: { clothingItem: true } } },
+      },
     },
+    orderBy: { wornAt: "desc" },
   });
-  if (!outfit) return res.status(404).json({ error: "This share link is invalid or expired." });
-
-  res.json({
-    name: outfit.name,
-    sharedBy: outfit.user.name,
-    items: outfit.items.map((i) => ({
-      name: i.clothingItem.name,
-      category: i.clothingItem.category,
-      imageUrl: i.clothingItem.imageUrl,
-    })),
-  });
+  res.json({ logs });
 }
 
-module.exports = { createOutfit, listOutfits, deleteOutfit, shareOutfit, getSharedOutfit };
+// ── In-app sharing ────────────────────────────────────────────────────────────
+
+async function shareWithUser(req, res) {
+  try {
+    const { toEmail, message } = req.body;
+    if (!toEmail) return res.status(400).json({ error: "Recipient email is required." });
+
+    const outfit = await prisma.outfit.findUnique({
+      where: { id: req.params.id },
+      include: { items: { include: { clothingItem: true } } },
+    });
+    if (!outfit || outfit.userId !== req.user.id) {
+      return res.status(404).json({ error: "Outfit not found." });
+    }
+
+    const toUser = await prisma.user.findUnique({ where: { email: toEmail.toLowerCase() } });
+    if (!toUser) {
+      return res.status(404).json({ error: "No user found with that email. They need to sign up first." });
+    }
+    if (toUser.id === req.user.id) {
+      return res.status(400).json({ error: "You can't share an outfit with yourself." });
+    }
+
+    // Upsert — re-sharing the same outfit to the same person just updates the message
+    const share = await prisma.outfitShare.upsert({
+      where: { outfitId_toUserId: { outfitId: outfit.id, toUserId: toUser.id } },
+      update: { message: message || null, seenAt: null, createdAt: new Date() },
+      create: {
+        outfitId: outfit.id,
+        fromUserId: req.user.id,
+        toUserId: toUser.id,
+        message: message || null,
+      },
+    });
+
+    // Fire email notification (non-blocking — don't fail the request if email fails)
+    sendOutfitSharedEmail({
+      toEmail: toUser.email,
+      toName: toUser.name,
+      fromName: req.user.name || "Someone",
+      outfitName: outfit.name,
+      appUrl: FRONTEND_URL,
+      message,
+    }).catch((err) => console.error("Email send failed:", err));
+
+    res.status(201).json({ share });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not share outfit." });
+  }
+}
+
+// Inbox — outfits shared with the logged-in user
+async function getInbox(req, res) {
+  const shares = await prisma.outfitShare.findMany({
+    where: { toUserId: req.user.id },
+    include: {
+      outfit: { include: { items: { include: { clothingItem: true } } } },
+      fromUser: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // Mark all as seen
+  await prisma.outfitShare.updateMany({
+    where: { toUserId: req.user.id, seenAt: null },
+    data: { seenAt: new Date() },
+  });
+
+  res.json({ shares });
+}
+
+// Unread count for the notification badge
+async function getUnreadCount(req, res) {
+  const count = await prisma.outfitShare.count({
+    where: { toUserId: req.user.id, seenAt: null },
+  });
+  res.json({ count });
+}
+
+module.exports = {
+  createOutfit,
+  listOutfits,
+  deleteOutfit,
+  confirmWearing,
+  getWearHistory,
+  shareWithUser,
+  getInbox,
+  getUnreadCount,
+};
