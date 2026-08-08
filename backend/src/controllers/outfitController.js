@@ -59,6 +59,33 @@ async function deleteOutfit(req, res) {
 
 // ── Wear log ─────────────────────────────────────────────────────────────────
 
+// Add this inside outfitController.js
+async function getSharedOutfit(req, res) {
+  try {
+    const { token } = req.params;
+    
+    // Find the share record or outfit by token
+    const share = await prisma.outfitShare.findUnique({
+      where: { id: token }, // adjust field name if your schema uses 'token' or 'id'
+      include: {
+        outfit: {
+          include: { items: { include: { clothingItem: true } } },
+        },
+        fromUser: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!share) {
+      return res.status(404).json({ error: "Shared outfit not found or link expired." });
+    }
+
+    res.json({ share });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not retrieve shared outfit." });
+  }
+}
+
 async function confirmWearing(req, res) {
   try {
     const { occasion, notes } = req.body;
@@ -185,4 +212,5 @@ module.exports = {
   shareWithUser,
   getInbox,
   getUnreadCount,
+  getSharedOutfit,
 };
