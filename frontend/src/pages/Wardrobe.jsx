@@ -48,7 +48,7 @@ export default function Wardrobe() {
       {showForm && <AddItemForm onAdded={() => { setShowForm(false); refresh(); }} />}
 
       {/* Filters */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
         {["ALL", "FORMAL", "INFORMAL"].map((s) => (
           <button key={s} onClick={() => setFilterStyle(s)}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
@@ -135,7 +135,7 @@ function AddItemForm({ onAdded }) {
   }
 
   return (
-    <div className="card space-y-4">
+    <form onSubmit={handleSubmit} className="card space-y-4">
       <h3 className="font-bold text-gray-900">Add clothing item</h3>
       <div className="flex gap-4">
         <label className="shrink-0 w-24 h-32 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 cursor-pointer overflow-hidden hover:border-sortech-400 transition-colors bg-gray-50">
@@ -150,7 +150,7 @@ function AddItemForm({ onAdded }) {
               <span className="text-[10px] text-gray-400 text-center">Tap to upload</span>
             </>
           )}
-          <input type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+          <input type="file" accept="image/*" onChange={handleFile} className="hidden" />
         </label>
         <div className="flex-1 space-y-3">
           <div>
@@ -179,7 +179,9 @@ function AddItemForm({ onAdded }) {
         </div>
       </div>
       {error && <p className="text-sm text-red-500">{error}</p>}
-      <button className="btn-primary w-full" disabled={busy}>{busy ? "Uploading..." : "Add to wardrobe"}</button>
-    </div>
+      <button type="submit" className="btn-primary w-full" disabled={busy}>
+        {busy ? "Uploading..." : "Add to wardrobe"}
+      </button>
+    </form>
   );
 }
